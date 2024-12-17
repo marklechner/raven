@@ -1,0 +1,67 @@
+global:
+  max_age_days: 7  # Default for all collectors
+
+collectors:
+  riskybiz:
+    enabled: true
+    feed_url: "https://risky.biz/feeds/risky-business/"
+    # max_age_days: 14  # Optional override per collector
+  therecord:
+    enabled: true
+
+llm:
+  model: "gemma2"
+  relevance_threshold: 0.6
+  max_tokens: 5000
+
+output:
+  console:
+    enabled: true
+    debug: true
+
+company:
+  name: "MyCompany"
+  industry: "Automation"
+  size: "startup"
+  region: "EU"
+  
+  tech_stack:
+    cloud:
+      - "GCP"
+      - "Azure"
+    languages:
+      - "Python"
+      - "Java"
+      - "JavaScript"
+    frameworks:
+      - "Flask"
+      - "Spring Boot"
+      - "React"
+    infrastructure:
+      - "Kubernetes"
+      - "Docker"
+      - "Terraform"
+      - "GitHub"
+      - "Yubikeys"
+      - "Linux"
+      - "Apple OSX"
+    
+  security_concerns:
+    high_priority:
+      - "Cloud Security"
+      - "API Security"
+      - "Identity Management"
+      - "Software Supply Chain Secuirty"
+    compliance:
+      - "NIS2"
+      - "ISO 27001"
+      - "SOC 2"
+      - "GDPR"
+    3rd_party_providers:
+      - Vercel
+      - Okta
+    
+  assets:
+    critical_systems:
+      - "OCR"
+      - "LLM"
