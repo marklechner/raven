@@ -1,0 +1,9 @@
+- title: "Critical Vulnerability Found in Popular Cloud Service"
+  content: "A critical vulnerability has been discovered in GCP's Cloud Run service that could allow unauthorized access to container environments. The vulnerability, tracked as CVE-2024-12345, affects all versions prior to 2.1.0. Google has released a patch and recommends immediate updating."
+  published_date: "2024-12-19T10:00:00"
+  categories: ["cloud", "vulnerability", "GCP"]
+
+- title: "New Phishing Campaign Targeting Okta Users"
+  content: "Security researchers have identified a sophisticated phishing campaign specifically targeting Okta users. The attackers are using convincing email templates that mimic Okta's official communications. Organizations are advised to enable MFA and conduct security awareness training."
+  published_date: "2024-12-18T15:30:00"
+  categories: ["phishing", "identity", "Okta"]

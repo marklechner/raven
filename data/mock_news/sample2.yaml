@@ -1,0 +1,4 @@
+- title: "GitHub Actions Security Update Released"
+  content: "GitHub has released an important security update for GitHub Actions that addresses potential token exposure in workflow logs. This update is particularly important for organizations using custom actions in their CI/CD pipelines."
+  published_date: "2024-12-19T09:15:00"
+  categories: ["CI/CD", "GitHub", "security-update"]

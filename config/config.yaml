@@ -8,10 +8,13 @@ collectors:
     # max_age_days: 14  # Optional override per collector
   therecord:
     enabled: true
+  mock:
+    enabled: true
+    data_dir: "data/mock_news"
 
 llm:
-  model: "gemma2"
-  relevance_threshold: 0.6
+  model: "mistral-small"
+  relevance_threshold: 0.75
   max_tokens: 5000
 
 output:

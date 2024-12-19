@@ -6,7 +6,9 @@ import argparse
 from rich.console import Console
 from collectors.riskybiz_collector import RiskyBizCollector
 from collectors.record_collector import TheRecordCollector
+from collectors.mock_collector import MockCollector
 from processors.llm_processor import LLMProcessor
+from processors.deduplication_processor import DeduplicationProcessor
 from delivery.console_output import ConsoleOutput
 from utils.config_validator import check_config, validate_config, RavenConfig
 
@@ -41,6 +43,11 @@ def setup_argparse():
         default='config/config.yaml',
         help='Path to configuration file'
     )
+    parser.add_argument(
+        '--no-dedup',
+        action='store_true',
+        help='Disable deduplication between news sources'
+    )
     return parser
 
 def setup_logging(log_level: str):
@@ -73,7 +80,7 @@ def load_config(config_path: str, max_age: int = None) -> dict:
     return config
 
 
-async def process_news_items(collectors, processor, output, dry_run: bool = False):
+async def process_news_items(collectors, deduplicator, processor, output, dry_run: bool = False):
     """Collect and process news items from all collectors"""
     all_news_items = []
     
@@ -89,14 +96,17 @@ async def process_news_items(collectors, processor, output, dry_run: bool = Fals
     if not all_news_items:
         logger.info("No news items collected from any source")
         return
+
+    # Deduplicate before processing
+    unique_items = await deduplicator.deduplicate(all_news_items)
     
     if dry_run:
-        display_dry_run_results(all_news_items)
+        display_dry_run_results(unique_items)
         return
     
-    logger.info(f"Collected total of {len(all_news_items)} news items")
+    logger.info(f"Processing {len(unique_items)} unique news items")
     
-    for item in all_news_items:
+    for item in unique_items:
         try:
             processed_item = await processor.process_news(item)
             output.deliver(processed_item)
@@ -105,35 +115,47 @@ async def process_news_items(collectors, processor, output, dry_run: bool = Fals
 
 
 def display_dry_run_results(news_items):
-    """Display results in dry-run mode"""
+    """Display detailed results in dry-run mode"""
     console.print("\n[bold]Would process these items:[/bold]")
     for item in news_items:
-        console.print(f"\n[yellow]Title:[/yellow] {item.title}")
+        console.print(f"\n[yellow]Source:[/yellow] {item.source}")
+        console.print(f"[yellow]Title:[/yellow] {item.title}")
         console.print(f"[yellow]Date:[/yellow] {item.published_date}")
         console.print(f"[yellow]URL:[/yellow] {item.url}")
+        console.print(f"[yellow]Categories:[/yellow] {', '.join(item.categories)}")
+        console.print("[yellow]Content Preview:[/yellow]")
+        # Show first 200 chars of content with word boundary
+        preview = item.content[:200] + ("..." if len(item.content) > 200 else "")
+        console.print(preview)
+        console.print(f"[gray]Content length: {len(item.content)} characters[/gray]")
+        console.print("─" * 80)  # Separator
     console.print(f"\nTotal items: {len(news_items)}")
     console.print("=== DRY RUN COMPLETE ===")
+
 
 def initialize_components(config: dict):
     """Initialize all required components"""
     collectors = []
     
-    # Initialize enabled collectors
     if config['collectors'].get('riskybiz', {}).get('enabled', False):
         collectors.append(RiskyBizCollector(config))
     
     if config['collectors'].get('therecord', {}).get('enabled', False):
         collectors.append(TheRecordCollector(config))
+        
+    if config['collectors'].get('mock', {}).get('enabled', False):
+        collectors.append(MockCollector(config))
 
     return (
         collectors,
+        DeduplicationProcessor(),
         LLMProcessor(),
         ConsoleOutput()
     )
 
+
 async def run_raven(args):
     """Main execution logic"""
-    # Load and validate configuration
     config = load_config(args.config, args.max_age)
     validation_result = validate_config(config)
     
@@ -143,12 +165,78 @@ async def run_raven(args):
             logger.error(f"- {error}")
         return False
     
-    # Initialize components
-    collector, processor, output = initialize_components(config)
+    collectors, deduplicator, processor, output = initialize_components(config)
     
-    # Process news items
-    await process_news_items(collector, processor, output, args.dry_run)
-    return True
+    try:
+        if args.dry_run:
+            console.print("[bold yellow]=== DRY RUN MODE ===[/bold yellow]")
+
+        # Collection phase
+        console.print("\n[bold blue]📥 Collecting news from sources...[/bold blue]")
+        all_news_items = []
+        source_stats = {}
+
+        for collector in collectors:
+            collector_name = collector.__class__.__name__.replace('Collector', '')
+            try:
+                console.print(f"[cyan]Fetching from {collector_name}...[/cyan]")
+                news_items = await collector.collect()
+                all_news_items.extend(news_items)
+                source_stats[collector_name] = len(news_items)
+            except Exception as e:
+                logger.error(f"Error collecting from {collector_name}: {str(e)}")
+                source_stats[collector_name] = 0
+
+        # Display collection statistics
+        console.print("\n[bold green]Collection Summary:[/bold green]")
+        for source, count in source_stats.items():
+            console.print(f"[green]- {source}: {count} items[/green]")
+        console.print(f"[bold green]Total items collected: {len(all_news_items)}[/bold green]")
+
+        if not all_news_items:
+            console.print("[yellow]No news items collected from any source[/yellow]")
+            return True
+
+        # Deduplication phase
+        if args.no_dedup:
+            console.print("\n[bold yellow]Deduplication disabled[/bold yellow]")
+            items_to_process = all_news_items
+        else:
+            console.print("\n[bold blue]🔄 Running deduplication...[/bold blue]")
+            items_to_process = await deduplicator.deduplicate(all_news_items)
+            console.print(f"[green]Deduplicated {len(all_news_items)} → {len(items_to_process)} items[/green]")
+
+        if args.dry_run:
+            display_dry_run_results(items_to_process)
+            return True
+
+        # Relevance check and processing phase
+        console.print("\n[bold blue]🤖 Checking relevance and processing items...[/bold blue]")
+        processed_count = 0
+        relevant_count = 0
+
+        for item in items_to_process:
+            try:
+                processed_item = await processor.process_news(item)
+                if processed_item.relevance_score > config['llm']['relevance_threshold']:
+                    relevant_count += 1
+                    output.deliver(processed_item)
+                processed_count += 1
+            except Exception as e:
+                logger.error(f"Error processing item: {str(e)}")
+
+        # Final statistics
+        console.print("\n[bold green]Processing Summary:[/bold green]")
+        console.print(f"[green]- Items processed: {processed_count}[/green]")
+        console.print(f"[green]- Relevant items: {relevant_count}[/green]")
+        console.print(f"[green]- Items filtered out: {processed_count - relevant_count}[/green]")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error during processing: {str(e)}")
+        return False
+    
 
 RAVEN_ASCII = """
 [bold blue]

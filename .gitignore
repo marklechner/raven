@@ -36,6 +36,5 @@ env/
 .settings
 
 # Project specific
-data/
 *.log
 .DS_Store

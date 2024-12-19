@@ -3,6 +3,7 @@ from typing import List, Tuple
 from models.news_item import NewsItem
 import yaml
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -39,59 +40,58 @@ class LLMProcessor:
 
     async def check_relevance(self, news_item: NewsItem) -> Tuple[bool, float]:
         """Quick relevance check before full analysis"""
-        prompt = f"""You must respond ONLY with two values: a number between 0 and 1, and either RELEVANT or SKIP.
-        Example correct response: "0.8 RELEVANT" or "0.2 SKIP"
-        
-        Based on this context:
+        prompt = f"""Given this company context and news item, analyze its relevance.
+
+        Company Context:
         {self.company_context}
 
-        Analyze this news item:
+        News Item:
         Title: {news_item.title}
-        Summary: {news_item.content[:500]}...
+        Summary: {news_item.content[:500]}
 
-        Consider:
-        1. Direct impact on our tech stack or infrastructure
-        2. Vulnerabilities in our critical 3rd party providers
-        3. Compliance and regulatory implications
-        4. Industry-wide threats relevant to our sector
-        5. Supply chain security concerns
+        Consider specifically:
+        1. Does it affect our tech stack (GCP, Azure, Python, Java, etc.)?
+        2. Does it impact our critical 3rd party providers (Vercel, Okta)?
+        3. Does it relate to our compliance requirements (NIS2, ISO 27001, SOC 2, GDPR)?
+        4. Could it affect our critical systems (OCR, LLM)?
+        5. Is it relevant to our security concerns (Cloud Security, API Security, Identity Management)?
 
-        Respond with ONLY two values: score (0-1) and decision (RELEVANT/SKIP).
+        After your analysis, provide your final decision in the format:
+        <number between 0 and 1> <RELEVANT or SKIP>
+
+        Example correct format:
+        0.8 RELEVANT
         """
 
         response = ollama.generate(
             model=self.model_name,
-            prompt=prompt,
-            #max_tokens=50
+            prompt=prompt
         )
 
-        try:
-            # Clean up the response and handle potential formatting issues
-            cleaned_response = response['response'].strip().split('\n')[0]  # Take first line only
-            parts = cleaned_response.split()
-            
-            # Look for a number and a decision word in the response
-            score = 0.0
-            decision = "SKIP"
-            
-            for part in parts:
-                try:
-                    # Try to convert to float
-                    potential_score = float(part)
-                    if 0 <= potential_score <= 1:
-                        score = potential_score
-                except ValueError:
-                    # If not a number, check if it's a decision word
-                    if part.upper() in ["RELEVANT", "SKIP"]:
-                        decision = part.upper()
+        logger.debug(f"\nRelevance analysis for: {news_item.title}")
+        logger.debug(f"LLM Response:\n{response['response']}")
 
-            logger.debug(f"Parsed relevance check: score={score}, decision={decision}")
-            return (decision == "RELEVANT", score)
+        try:
+            # Use regex to find a float followed by RELEVANT or SKIP
+            # This will work even with markdown formatting or if LLM misbehaves with output format
+            pattern = r'(\d*\.?\d+)\s*(RELEVANT|SKIP)'
+            matches = re.findall(pattern, response['response'])
             
+            if not matches:
+                raise ValueError("No valid score/decision pair found in response")
+                
+            # Take the last match if multiple exist
+            score_str, decision = matches[-1]
+            score = float(score_str)
+            
+            if not (0 <= score <= 1):
+                raise ValueError(f"Score {score} out of valid range [0,1]")
+            
+            logger.info(f"Relevance decision for '{news_item.title}': {score} ({decision})")
+            return (decision == 'RELEVANT', score)
         except Exception as e:
-            logger.error(f"Error parsing relevance check: {str(e)}\nRaw response: {response['response']}")
-            return (False, 0.0)  # Default to not relevant on parsing errors
-    
+            logger.error(f"Error parsing relevance check: {str(e)}\nFull response: {response['response']}")
+            return (False, 0.0)
 
     async def process_news(self, news_item: NewsItem) -> NewsItem:
         """Full analysis for relevant items"""
