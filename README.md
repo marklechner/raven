@@ -26,7 +26,7 @@ Raven is an intelligent security news aggregator designed to help organizations 
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/raven.git
+git clone https://github.com/marklechner/raven.git
 cd raven
 
 # Set up Python environment
